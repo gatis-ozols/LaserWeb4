@@ -242,7 +242,7 @@ export function cut(geometry, openGeometry, climb) {
     return result;
 };
 
-export function fillPath(geometry, lineDistance, angle) {
+export function fillPath(geometry, lineDistance, angle, useFillOverscan) {
     if (!geometry.length || !geometry[0].length)
         return [];
     let bounds = clipperBounds(geometry);
@@ -268,8 +268,23 @@ export function fillPath(geometry, lineDistance, angle) {
         );
     }
 
-    let allPaths = [];
     let separated = separateTabs(scan, geometry);
+    if(useFillOverscan) {
+        // if using overscan then do not merge the paths
+        // because that messes with the order of separated tabs
+        let camPaths = [];
+        for (let i = 1; i < separated.length; i += 2) {
+            let path = separated[i];
+            camPaths.push({
+                path: path,
+                safeToClose: false
+            });
+        }
+    
+        return camPaths;
+    }
+
+    let allPaths = [];
     for (let i = 1; i < separated.length; i += 2)
         allPaths.push(separated[i]);
     return mergePaths(null, allPaths);

@@ -38,7 +38,7 @@ export function getLaserCutGcode(props) {
         tabGeometry, gcodeToolOn, gcodeToolOff,
         gcodeLaserIntensity, gcodeLaserIntensitySeparateLine, gcodeSMinValue, gcodeSMaxValue,
         useZ, useBlower,
-        hookPassStart, hookPassEnd
+        hookPassStart, hookPassEnd, useFillOverscan, fillOverscan
     } = props;
 
     if (gcodeToolOn)
@@ -102,6 +102,9 @@ export function getLaserCutGcode(props) {
             }
         }
 
+        let prevY = null;
+        let prevX = null;
+
         let usedZposition = false;
         for (let pathIndex = 0; pathIndex < paths.length; ++pathIndex) {
             let path = paths[pathIndex].path;
@@ -118,6 +121,46 @@ export function getLaserCutGcode(props) {
                     gcode += '; Skip tab\r\n';
                     continue;
                 }
+
+                if(useFillOverscan && (prevY === null || prevY !== selectedPath[0].Y)) {
+                    // if using fill overscan then overscanning paths
+                    let overscan = fillOverscan;// defaulting to right overscan
+                    if(selectedPath[0].X < selectedPath[1].X) {
+                        // if starting point is more to the left then overscanning to left
+                        overscan = -fillOverscan;
+                    }
+
+                    // defaults for first path
+                    if(prevY === null) {
+                        prevY = selectedPath[0].Y;
+                    }
+
+                    if(prevX === null) {
+                        prevX = selectedPath[0].X;
+                    }
+
+                    // converting previous point
+                    let pt = convertPoint({ X: prevX, Y: prevY }, true);
+                    
+                    // overscanning previous path
+                    let x = parseFloat(pt.x) + overscan;
+                    pt.x = x.toFixed(decimal);
+                    gcode +=  generator.moveRapid(pt) + '\r\n';
+                    
+                    if(pathIndex !== 0) {
+                        // overscan for the next path (the upper one if everything goes to plan)
+                        pt = convertPoint({ X: selectedPath[0].X, Y: selectedPath[0].Y }, true);
+                        x = parseFloat(pt.x) + overscan;
+                        pt.x = x.toFixed(decimal);
+
+                        gcode += generator.moveRapid(pt) + '\r\n';
+                    }
+
+
+                    prevY = selectedPath[0].Y;
+                }
+                prevX = selectedPath[1].X;
+
                 gcode += generator.moveRapid(convertPoint(selectedPath[0], true)) + '\r\n';
 
                 if (useZ && !usedZposition) {
@@ -145,6 +188,8 @@ export function getLaserCutGcode(props) {
                 }
 
                 gcode += generator.toolOff(gcodeToolOff, {i:laserOnS});
+
+                
             }
         }
 
@@ -221,7 +266,7 @@ export function getLaserCutGcodeFromOp(settings, opIndex, op, geometry, openGeom
     } else if (op.type === 'Laser Fill Path') {
         if (op.margin)
             geometry = offset(geometry, -op.margin * mmToClipperScale);
-        camPaths = fillPath(geometry, op.lineDistance * mmToClipperScale, op.lineAngle);
+        camPaths = fillPath(geometry, op.lineDistance * mmToClipperScale, op.lineAngle, op.useFillOverscan);
     }
 
     reduceCamPaths(camPaths, op.segmentLength * mmToClipperScale);
@@ -274,6 +319,9 @@ export function getLaserCutGcodeFromOp(settings, opIndex, op, geometry, openGeom
 
         hookPassStart: op.hookPassStart,
         hookPassEnd: op.hookPassEnd,
+
+        useFillOverscan: op.useFillOverscan,
+        fillOverscan: op.fillOverscan,
     });
 
     if (op.hookOperationEnd.length) gcode += op.hookOperationEnd;
